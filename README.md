@@ -1,5 +1,5 @@
 # SwiftSki (WoW 3.3.5a)
-
+[![Join DevSki Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)]([https://discord.gg/Z38qyNdqpX])
 Lightweight quality-of-life addon for 3.3.5a Wrath of the Lich King servers.  
 _Not affiliated with or endorsed by Blizzard Entertainment._
 
