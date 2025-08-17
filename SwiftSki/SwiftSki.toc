@@ -1,0 +1,16 @@
+## Interface: 30300
+## Title: SwiftSki
+## Notes: Quality of Life addon for 3.3.5a — Auto accept & turn-in quests, vendor junk, item locks, missed loot notifier, and more.
+## Author: ShaunSki • DevSki
+## Version: 1.0
+## SavedVariables: SwiftSkiDB
+
+SwiftSki_Core.lua
+SwiftSki_Sounds.lua
+SwiftSki_Main.lua
+SwiftSki_Ascension.lua
+SwiftSki_Questing.lua
+SwiftSki_Vendor.lua
+SwiftSki_ItemLock.lua
+SwiftSki_Settings.lua
+SwiftSki_About.lua
