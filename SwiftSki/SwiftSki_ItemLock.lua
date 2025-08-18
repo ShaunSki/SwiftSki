@@ -6,6 +6,7 @@
   - “X” button in the list to unlock
   - Master checkbox: Enable Item Lock
   - Greys out/blocks everything when disabled
+  - Prevents manual selling of locked items at merchants (right-click & drag)
 ----------------------------------------------------------------------]]
 
 local SS = _G.SwiftSki
@@ -35,6 +36,9 @@ function SS:ItemLock_IsEnabled() local o = LOPT(); return (o and o.itemLockEnabl
 ----------------------------------------------------------------------
 local function LTag() return "["..SS:lime("SwiftSki").."-"..Ic("Item Lock").."] " end
 local function LPrint(msg) SS:Chat(LTag()..msg) end
+local function ErrorToast(msg)
+  if UIErrorsFrame then UIErrorsFrame:AddMessage(msg, 1, .2, .2, 1) else LPrint("|cffff5555"..msg.."|r") end
+end
 
 ----------------------------------------------------------------------
 -- Utilities
@@ -43,7 +47,10 @@ local function After(delay, fn)
   local f, t = CreateFrame("Frame"), 0
   f:SetScript("OnUpdate", function(self, e)
     t = t + e
-    if t >= delay then self:SetScript("OnUpdate", nil); self:Hide(); pcall(fn) end
+    if t >= (delay or 0) then
+      self:SetScript("OnUpdate", nil); self:Hide()
+      if type(fn)=="function" then pcall(fn) end
+    end
   end)
 end
 local function ItemIDFromLink(link) return tonumber(string.match(link or "", "item:(%d+)") or 0) end
@@ -69,6 +76,16 @@ local function SafeItemLink(id)
   if link then return link end
   local fallbackName = "item:"..id
   return "|Hitem:"..id..":0:0:0:0:0:0:0:0|h["..fallbackName.."]|h"
+end
+
+-- 3.3.5a compatibility: polyfill a "set enabled" behavior on any widget
+local function SetEnabledCompat(widget, enabled)
+  if not widget then return end
+  if enabled then
+    if widget.Enable then widget:Enable() end
+  else
+    if widget.Disable then widget:Disable() end
+  end
 end
 
 ----------------------------------------------------------------------
@@ -111,12 +128,13 @@ function SS:ItemLock_ShowRefTooltip(id)
 end
 
 ----------------------------------------------------------------------
--- ALT+Left-Click hooks in bags + cursor tooltip
+-- Bag hooks: clicks + tooltip augmentation + manual-sell prevention
 ----------------------------------------------------------------------
-local function HookContainerClicks()
+local function HookContainerIntegration()
   if SS._ilHooked then return end
   SS._ilHooked = true
 
+  -- ALT + LeftClick to toggle lock
   hooksecurefunc("ContainerFrameItemButton_OnModifiedClick", function(frame, btn)
     if not SS:ItemLock_IsEnabled() then return end
     if not IsAltKeyDown() or btn ~= "LeftButton" then return end
@@ -129,25 +147,66 @@ local function HookContainerClicks()
     if itemID and itemID > 0 then SS:ItemLock_ToggleByID(itemID, true) end
   end)
 
-  hooksecurefunc("ContainerFrameItemButton_OnEnter", function(frame)
-    if not frame or not frame:GetParent() then return end
+  -- Tooltip note: append when the bag tooltip is (re)built (don’t re-anchor)
+  hooksecurefunc(GameTooltip, "SetBagItem", function(tt, bag, slot)
     if not SS:ItemLock_IsEnabled() then return end
-    local bag  = frame:GetParent():GetID()
-    local slot = frame:GetID()
-    local link = (bag and slot) and GetContainerItemLink(bag, slot)
+    if not bag or not slot then return end
+    local link = GetContainerItemLink(bag, slot)
     if not link then return end
     local id = ItemIDFromLink(link)
-    GameTooltip:SetOwner(frame, "ANCHOR_CURSOR")
-    GameTooltip:SetBagItem(bag, slot)
-    if id and id > 0 then
-      if SS:IsItemLockedID(id) then
-        GameTooltip:AddLine("|cffff5555[LOCKED]|r - ALT+Left Click to |cff32CD32Unlock|r")
-      else
-        GameTooltip:AddLine("|cff32CD32[UNLOCKED]|r - ALT+Left Click to |cffff5555Lock|r")
-      end
+    if not id or id == 0 then return end
+
+    if SS:IsItemLockedID(id) then
+      tt:AddLine("|cffff5555[LOCKED]|r — ALT+Left Click to |cff32CD32Unlock|r")
+    else
+      tt:AddLine("|cff32CD32[UNLOCKED]|r — ALT+Left Click to |cffff5555Lock|r")
     end
-    GameTooltip:Show()
+    tt:Show()
   end)
+
+  --------------------------------------------------------------------
+  -- Prevent manual sells of locked items
+  --------------------------------------------------------------------
+
+  -- A) Block right-click sells (UseContainerItem when MerchantFrame is open)
+  if not SS._ilPatchedUseContainerItem then
+    SS._ilPatchedUseContainerItem = true
+    SS._origUseContainerItem = SS._origUseContainerItem or UseContainerItem
+    UseContainerItem = function(bag, slot, onSelf)
+      if SS:ItemLock_IsEnabled() and MerchantFrame and MerchantFrame:IsShown() then
+        local link = GetContainerItemLink(bag, slot)
+        local id = ItemIDFromLink(link)
+        if id and id > 0 and SS:IsItemLockedID(id) then
+          local name = (GetItemInfo(id)) or ("item:"..id)
+          ErrorToast(string.format("%s is locked and cannot be sold.", name))
+          -- optional: play error sound on Wrath (female inventory full is 9550 in later; safer to omit)
+          return
+        end
+      end
+      return SS._origUseContainerItem(bag, slot, onSelf)
+    end
+  end
+
+  -- B) Block drag-to-merchant sells (early guard on MerchantFrame drop)
+  if MerchantFrame then
+    if not SS._ilPatchedMerchantDrop then
+      SS._ilPatchedMerchantDrop = true
+      local orig = MerchantFrame:GetScript("OnReceiveDrag")
+      MerchantFrame:SetScript("OnReceiveDrag", function(self, ...)
+        if SS:ItemLock_IsEnabled() and CursorHasItem() then
+          local t, itemID, link = GetCursorInfo()  -- on 3.3.5a: "item", itemID or spell etc., plus link
+          local id = ItemIDFromLink(link) or itemID
+          if id and SS:IsItemLockedID(id) then
+            local name = (GetItemInfo(id)) or ("item:"..id)
+            ClearCursor()
+            ErrorToast(string.format("%s is locked and cannot be sold.", name))
+            return
+          end
+        end
+        if type(orig)=="function" then return orig(self, ...) end
+      end)
+    end
+  end
 end
 
 ----------------------------------------------------------------------
@@ -209,7 +268,7 @@ function SS:ItemLock_UpdateEnabledState(enabled)
   end
 
   if self.ItemLockSearch then
-    self.ItemLockSearch:SetEnabled(enabled)
+    SetEnabledCompat(self.ItemLockSearch, enabled) -- 3.3.5a-safe
     self.ItemLockSearch:SetAlpha(alpha)
   end
 
@@ -234,7 +293,7 @@ function SS:ItemLock_UpdateEnabledState(enabled)
 end
 
 function SS:BuildItemLockPanel(container)
-  HookContainerClicks()
+  HookContainerIntegration()
   LDB()
 
   -- No per-tab title. Compact content box.
@@ -243,7 +302,7 @@ function SS:BuildItemLockPanel(container)
   -- Master enable/disable
   local chkEnable = CreateFrame("CheckButton", "SwiftSki_ItemLock_Enable", container, "InterfaceOptionsCheckButtonTemplate")
   chkEnable:SetPoint("TOPLEFT", box, "TOPLEFT", 14, -18)
-  _G[chkEnable:GetName().."Text"]:SetText("|cff32CD32Enable Item Lock|r") -- corrected by UpdateEnabledState
+  _G[chkEnable:GetName().."Text"]:SetText("|cff32CD32Enable Item Lock|r") -- live-colored by UpdateEnabledState
   chkEnable:SetChecked(self:ItemLock_IsEnabled())
   chkEnable:SetScript("OnClick", function(btn)
     local on = btn:GetChecked() and true or false
@@ -316,12 +375,17 @@ function SS:BuildItemLockPanel(container)
   scroll:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", -26, LIST_PADY)
   self.ItemLockScroll = scroll
 
-  self.ItemLockRows = self.ItemLockRows or {}
-  for i=1, ROWS do
+  self.ItemLockRows = {}
+  for i = 1, ROWS do
     local row = CreateFrame("Button", nil, listFrame)
     row:SetHeight(ROW_HEIGHT)
-    row:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 12, -8 - (i-1)*ROW_HEIGHT)
-    row:SetPoint("RIGHT", scroll, "RIGHT", -8, 0)
+    row:SetPoint("LEFT", listFrame, "LEFT", 8, 0)
+    row:SetPoint("RIGHT", listFrame, "RIGHT", -8, 0)
+    if i == 1 then
+      row:SetPoint("TOP", listFrame, "TOP", 0, -LIST_PADY)
+    else
+      row:SetPoint("TOP", self.ItemLockRows[i-1], "BOTTOM", 0, 0)
+    end
 
     local txt = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     txt:SetPoint("LEFT", row, "LEFT", 0, 0)
@@ -366,6 +430,7 @@ function SS:BuildItemLockPanel(container)
 
     self.ItemLockRows[i] = row
   end
+
   scroll:SetScript("OnVerticalScroll", function(selfScr, offset)
     FauxScrollFrame_OnVerticalScroll(selfScr, offset, ROW_HEIGHT, function() SS:ItemLock_Refresh() end)
   end)
@@ -400,8 +465,28 @@ function SS:ItemLock_Refresh()
     end
   end
 
+  -- If some names were uncached, rebuild shortly
   if self._ilNeedsRetry then
     self._ilNeedsRetry = nil
     After(0.25, function() SS:ItemLock_RebuildFiltered(); SS:ItemLock_Refresh() end)
   end
+end
+
+----------------------------------------------------------------------
+-- Install hooks at login/world
+----------------------------------------------------------------------
+do
+  local boot = CreateFrame("Frame")
+  boot:RegisterEvent("PLAYER_LOGIN")
+  boot:RegisterEvent("PLAYER_ENTERING_WORLD")
+  boot:SetScript("OnEvent", function(_, evt)
+    if evt == "PLAYER_LOGIN" or evt == "PLAYER_ENTERING_WORLD" then
+      if type(LDB) == "function" then pcall(LDB) end
+      if type(HookContainerIntegration) == "function" then pcall(HookContainerIntegration) end
+      -- tiny delayed retry to catch frames created a tick later on some clients
+      After(0.10, function()
+        if type(HookContainerIntegration) == "function" then pcall(HookContainerIntegration) end
+      end)
+    end
+  end)
 end

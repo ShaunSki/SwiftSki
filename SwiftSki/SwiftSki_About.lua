@@ -15,7 +15,8 @@ local TEXT_W = 640
 -- ---------- UI helpers ----------
 local function addRule(parent, x, y, w)
   local t = parent:CreateTexture(nil, "ARTWORK")
-  t:SetColorTexture(1, 1, 1, 0.08)
+  -- 3.3.5a: SetColorTexture doesn't exist; SetTexture(r,g,b,a) is supported
+  t:SetTexture(1, 1, 1, 0.08)
   t:SetPoint("TOPLEFT", x, y)
   t:SetSize(w, 1)
   return t
@@ -68,7 +69,7 @@ function SS:BuildAboutPanel(container)
   logo:SetPoint("TOPLEFT", 14, -8)
   logo:SetTexture("Interface\\AddOns\\SwiftSki\\img\\DevSki.tga")
 
-  local title = box:CreateFontString(nil, "ARTWORK", "GameFontNormalHuge")
+  local title = box:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   title:SetPoint("LEFT", logo, "RIGHT", 12, 14)
   title:SetJustifyH("LEFT")
   local ver = (GetAddOnMetadata and (GetAddOnMetadata("SwiftSki", "Version") or "1.0")) or "1.0"

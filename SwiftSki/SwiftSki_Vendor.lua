@@ -18,8 +18,8 @@ local function VOpt()
   v.quality           = v.quality or {}
   if v.quality[0]     == nil then v.quality[0]     = true  end
   if v.quality[1]     == nil then v.quality[1]     = true  end
-  if v.quality[2]     == nil then v.quality[2]     = true  end
-  if v.quality[3]     == nil then v.quality[3]     = true  end
+  if v.quality[2]     == nil then v.quality[2]     = false end
+  if v.quality[3]     == nil then v.quality[3]     = false end
   if v.quality[4]     == nil then v.quality[4]     = false end
   if v.quality[5]     == nil then v.quality[5]     = false end
   if v.quality[6]     == nil then v.quality[6]     = false end
