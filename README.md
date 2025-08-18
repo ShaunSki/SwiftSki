@@ -8,7 +8,7 @@ _Not affiliated with or endorsed by Blizzard Entertainment._
 - Main: Auto-Summon Companion, Missed Loot Notifier.
 - Questing: Auto-accept, Auto-Complete (Toggleable Auto reward with filters), Abandon All Quests button.
 - Vendor: Auto-sell on Vendor visit, full rarity filters, material filters, safe-sell option (max 10 items) & works with Item Lock.
-- Item Lock: Locks items from being sold automatically from Vendor.
+- Item Lock: Locks items from being sold automatically/manually on Vendor.
 - Ascension: Features for Ascension only server: Auto Collect Appearance, Fast Roulette (Elune), Auto-equip Heirlooms (On Prestige), Auto-use Manastorm Buffs (button press)
 - Settings: Option to disable Minimap button.
 
