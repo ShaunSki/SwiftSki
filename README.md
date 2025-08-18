@@ -5,9 +5,13 @@
 Provides a clear list of everything locked, even a tooltip in your inventory!
 
 **Vendor Auto-Sell** - rarity filters + material protection; respects Item Lock. (Cool animations if u sell a lot!)
-**Faster Questing** - bulk accept &bulk turn-in; reward logic can be modified to your likings. (You can turn on auto accept which takes you straight to reward screen and choose the reward manually still.
+
+**Faster Questing** - bulk accept & bulk turn-in; reward logic can be modified to your likings. (You can turn on auto accept which takes you straight to reward screen and choose the reward manually still.
+
 **Abandon all quests** - Extra Button in quest log.
+
 **Missed Loot Notifier** - Tells you which item you missed when trying to loot or need/greed (inventory full).
+
 **Auto-summon companion** - Take that cute kitty everywhere! (Remembers your last companion summoned)
 
 ## Installation (3.3.5a private servers)
