@@ -1,5 +1,12 @@
 # SwiftSki (WoW 3.3.5a)
-Bug Reports / Suggestions can be sent to my Discord. https://discord.gg/Z38qyNdqpX
+Bug Reports / Suggestions can be sent to my Discord. 
+
+<p align="center">
+  <a href="https://discord.gg/Z38qyNdqpX">
+    <img src="assets/devski-discord-banner.svg" alt="Join the DevSki Discord" />
+  </a>
+</p>
+
 
 Lightweight quality-of-life addon for 3.3.5a Wrath of the Lich King servers.  
 _Not affiliated with or endorsed by Blizzard Entertainment._
