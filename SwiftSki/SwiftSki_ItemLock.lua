@@ -107,11 +107,13 @@ function SS:ItemLock_ToggleByID(itemID, announce)
 
   if db.locked[itemID] then
     db.locked[itemID] = nil
+    if SS.PlayCheckbox then SS:PlayCheckbox(false) end  -- unlock sound
     if announce then
       LPrint(SS:lime("UNLOCKED").." "..ColoredItemNameBrackets(itemID).." |cffaaaaaa(ID "..itemID..")|r")
     end
   else
     db.locked[itemID] = true
+    if SS.PlayCheckbox then SS:PlayCheckbox(true) end   -- lock sound
     if announce then
       LPrint(SS:red("LOCKED").." "..ColoredItemNameBrackets(itemID).." |cffaaaaaa(ID "..itemID..")|r")
     end
@@ -128,7 +130,42 @@ function SS:ItemLock_ShowRefTooltip(id)
 end
 
 ----------------------------------------------------------------------
--- Bag hooks: clicks + tooltip augmentation + manual-sell prevention
+-- Manual-sell protection plumbing (taint-free)
+----------------------------------------------------------------------
+local pendingBuyback = {}  -- { [itemID] = { expires = time, name = "Item Name" } }
+
+local function QueueBuyback(itemID, name)
+  if not itemID then return end
+  pendingBuyback[itemID] = { expires = GetTime() + 3.0, name = name or ("item:"..itemID) }
+end
+
+local function ScanAndBuyback()
+  local n = GetNumBuybackItems and GetNumBuybackItems() or 0
+  if n <= 0 then return end
+  for i = 1, n do
+    local link = GetBuybackItemLink and GetBuybackItemLink(i)
+    local id = link and ItemIDFromLink(link)
+    if id and pendingBuyback[id] then
+      local name = pendingBuyback[id].name or (GetItemInfo(id)) or ("item:"..id)
+      pendingBuyback[id] = nil
+      BuybackItem(i)
+      ErrorToast(string.format("%s is locked and cannot be sold.", name))
+      return true
+    end
+  end
+end
+
+local function PrunePending()
+  local now = GetTime()
+  for id, data in pairs(pendingBuyback) do
+    if data.expires and data.expires < now then
+      pendingBuyback[id] = nil
+    end
+  end
+end
+
+----------------------------------------------------------------------
+-- Bag hooks: clicks + tooltip + sell prevention
 ----------------------------------------------------------------------
 local function HookContainerIntegration()
   if SS._ilHooked then return end
@@ -168,44 +205,56 @@ local function HookContainerIntegration()
   -- Prevent manual sells of locked items
   --------------------------------------------------------------------
 
-  -- A) Block right-click sells (UseContainerItem when MerchantFrame is open)
-  if not SS._ilPatchedUseContainerItem then
-    SS._ilPatchedUseContainerItem = true
-    SS._origUseContainerItem = SS._origUseContainerItem or UseContainerItem
-    UseContainerItem = function(bag, slot, onSelf)
-      if SS:ItemLock_IsEnabled() and MerchantFrame and MerchantFrame:IsShown() then
-        local link = GetContainerItemLink(bag, slot)
-        local id = ItemIDFromLink(link)
-        if id and id > 0 and SS:IsItemLockedID(id) then
+  -- A) Drag-to-merchant: block early by clearing the cursor
+  if MerchantFrame and not SS._ilPatchedMerchantDrop then
+    SS._ilPatchedMerchantDrop = true
+    local orig = MerchantFrame:GetScript("OnReceiveDrag")
+    MerchantFrame:SetScript("OnReceiveDrag", function(self, ...)
+      if SS:ItemLock_IsEnabled() and CursorHasItem() then
+        local t, itemID, link = GetCursorInfo() 
+        local id = ItemIDFromLink(link) or itemID
+        if id and SS:IsItemLockedID(id) then
+          ClearCursor()
           local name = (GetItemInfo(id)) or ("item:"..id)
           ErrorToast(string.format("%s is locked and cannot be sold.", name))
-          -- optional: play error sound on Wrath (female inventory full is 9550 in later; safer to omit)
+		  -- optional: play error sound on Wrath (female inventory full is 9550 in later; safer to omit)
           return
         end
       end
-      return SS._origUseContainerItem(bag, slot, onSelf)
-    end
+      if type(orig)=="function" then return orig(self, ...) end
+    end)
   end
 
-  -- B) Block drag-to-merchant sells (early guard on MerchantFrame drop)
-  if MerchantFrame then
-    if not SS._ilPatchedMerchantDrop then
-      SS._ilPatchedMerchantDrop = true
-      local orig = MerchantFrame:GetScript("OnReceiveDrag")
-      MerchantFrame:SetScript("OnReceiveDrag", function(self, ...)
-        if SS:ItemLock_IsEnabled() and CursorHasItem() then
-          local t, itemID, link = GetCursorInfo()  -- on 3.3.5a: "item", itemID or spell etc., plus link
-          local id = ItemIDFromLink(link) or itemID
-          if id and SS:IsItemLockedID(id) then
-            local name = (GetItemInfo(id)) or ("item:"..id)
-            ClearCursor()
-            ErrorToast(string.format("%s is locked and cannot be sold.", name))
-            return
-          end
-        end
-        if type(orig)=="function" then return orig(self, ...) end
-      end)
-    end
+  -- B) Right-click sell: Hook it,
+  --    remember the item, then on MERCHANT_UPDATE/BUYBACK update we buy it back.
+  if not SS._ilHookedUseContainerItem then
+    SS._ilHookedUseContainerItem = true
+    hooksecurefunc("UseContainerItem", function(bag, slot, onSelf)
+      if not SS:ItemLock_IsEnabled() then return end
+      if not MerchantFrame or not MerchantFrame:IsShown() then return end
+      local link = GetContainerItemLink(bag, slot)
+      local id = ItemIDFromLink(link)
+      if not id or id == 0 or not SS:IsItemLockedID(id) then return end
+      local name = (GetItemInfo(id)) or ("item:"..id)
+      QueueBuyback(id, name)
+      -- We wait for the merchant to update, then buy back the matching item.
+    end)
+  end
+
+  -- Event watcher to complete the buyback after the right-click sale lands
+  if not SS._ilBuybackWatcher then
+    local w = CreateFrame("Frame")
+    w:RegisterEvent("MERCHANT_UPDATE")
+    if w.RegisterEvent then w:RegisterEvent("MERCHANT_SHOW") end
+    SS._ilBuybackWatcher = w
+    w:SetScript("OnEvent", function()
+      if next(pendingBuyback) then
+        After(0.05, function()
+          ScanAndBuyback()
+          PrunePending()
+        end)
+      end
+    end)
   end
 end
 
@@ -260,15 +309,15 @@ function SS:ItemLock_UpdateEnabledState(enabled)
     local txt = _G[self.ItemLockEnableCheck:GetName().."Text"]
     if txt then
       if enabled then
-        txt:SetText("|cff32CD32Enable Item Lock|r")
-      else
-        txt:SetText("|cffff5555Enable Item Lock|r")
-      end
+	  txt:SetText("|cff32CD32Enable Item Lock|r")
+      else 
+	  txt:SetText("|cffff5555Enable Item Lock|r") 
+	  end
     end
   end
 
   if self.ItemLockSearch then
-    SetEnabledCompat(self.ItemLockSearch, enabled) -- 3.3.5a-safe
+    SetEnabledCompat(self.ItemLockSearch, enabled)
     self.ItemLockSearch:SetAlpha(alpha)
   end
 
@@ -296,18 +345,17 @@ function SS:BuildItemLockPanel(container)
   HookContainerIntegration()
   LDB()
 
-  -- No per-tab title. Compact content box.
   local box = self:AddSeparator(container, 8, -18, -8)
 
   -- Master enable/disable
   local chkEnable = CreateFrame("CheckButton", "SwiftSki_ItemLock_Enable", container, "InterfaceOptionsCheckButtonTemplate")
   chkEnable:SetPoint("TOPLEFT", box, "TOPLEFT", 14, -18)
-  _G[chkEnable:GetName().."Text"]:SetText("|cff32CD32Enable Item Lock|r") -- live-colored by UpdateEnabledState
+  _G[chkEnable:GetName().."Text"]:SetText("|cff32CD32Enable Item Lock|r")
   chkEnable:SetChecked(self:ItemLock_IsEnabled())
   chkEnable:SetScript("OnClick", function(btn)
     local on = btn:GetChecked() and true or false
     LOPT().itemLockEnabled = on
-    SS:PlayCheckbox(on)
+    if SS.PlayCheckbox then SS:PlayCheckbox(on) end
     LPrint("Item Lock: "..(on and SS:lime("ON") or SS:red("OFF")))
     SS:ItemLock_UpdateEnabledState(on)
   end)
@@ -327,7 +375,7 @@ function SS:BuildItemLockPanel(container)
   eb:SetText("")
   self.ItemLockSearch = eb
 
-  -- Rarity filters (keep quality colors)
+  -- Rarity filters
   container._qualChecks = container._qualChecks or {}
   local baseX, baseY = 10, -98
   local function brighten(v) v=v+0.12; if v>1 then v=1 end; return v end
@@ -356,7 +404,7 @@ function SS:BuildItemLockPanel(container)
     cb:SetScript("OnLeave", function() fs:SetTextColor(r,g,b); GameTooltip:Hide() end)
     cb:SetScript("OnClick", function(selfBtn)
       LDB().itemLockFilters[qual] = selfBtn:GetChecked() and true or false
-      SS:PlayCheckbox(selfBtn:GetChecked())
+      if SS.PlayCheckbox then SS:PlayCheckbox(selfBtn:GetChecked()) end
       SS:ItemLock_SearchChanged()
     end)
     table.insert(container._qualChecks, cb)
@@ -465,7 +513,6 @@ function SS:ItemLock_Refresh()
     end
   end
 
-  -- If some names were uncached, rebuild shortly
   if self._ilNeedsRetry then
     self._ilNeedsRetry = nil
     After(0.25, function() SS:ItemLock_RebuildFiltered(); SS:ItemLock_Refresh() end)
@@ -473,7 +520,7 @@ function SS:ItemLock_Refresh()
 end
 
 ----------------------------------------------------------------------
--- Install hooks at login/world
+-- Install hooks at login/world so /reload + hover works immediately
 ----------------------------------------------------------------------
 do
   local boot = CreateFrame("Frame")
@@ -483,7 +530,6 @@ do
     if evt == "PLAYER_LOGIN" or evt == "PLAYER_ENTERING_WORLD" then
       if type(LDB) == "function" then pcall(LDB) end
       if type(HookContainerIntegration) == "function" then pcall(HookContainerIntegration) end
-      -- tiny delayed retry to catch frames created a tick later on some clients
       After(0.10, function()
         if type(HookContainerIntegration) == "function" then pcall(HookContainerIntegration) end
       end)
