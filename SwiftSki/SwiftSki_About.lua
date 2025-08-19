@@ -97,7 +97,7 @@ function SS:BuildAboutPanel(container)
 
   -- Discord (read-only style input + Select button)
   addSubTitle(box, "Discord (bugs/feedback):", 14, -156)
-  local URL = "https://discord.gg/mSyBB2jYZ2"
+  local URL = "https://discord.gg/6BK5ApbEgV"
 
   local eb = CreateFrame("EditBox", nil, box, "InputBoxTemplate")
   eb:SetPoint("TOPLEFT", 16, -178)
