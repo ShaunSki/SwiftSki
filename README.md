@@ -15,7 +15,7 @@ Provides a clear list of everything locked, even a tooltip in your inventory!
 **Auto-summon companion** - Take that cute kitty everywhere! (Remembers your last companion summoned)
 
 ## Installation (3.3.5a private servers)
-1. Download the latest release: https://github.com/ShaunSki/SwiftSki/releases/tag/v1.0.0
+1. Download the latest release on the far right.
 2. Extract the **SwiftSki** folder to:
    - **Windows:** `World of Warcraft\Interface\AddOns\`
    - **macOS:** `World of Warcraft/Interface/AddOns/`
